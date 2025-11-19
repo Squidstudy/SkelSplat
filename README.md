@@ -7,10 +7,9 @@ Human pose is modeled as a skeleton of 3D Gaussians, one per joint, optimized vi
 
 ## 📦 Installation
 ```bash
+git clone https://github.com/laurabragagnolo/SkelSplat.git --recurse-submodules
 
 pip install -r requirements.txt
-
-git clone https://github.com/laurabragagnolo/SkelSplat.git --recurse-submodules
 
 pip install submodules/fused-ssim
 pip install submodules/simple-knn
@@ -33,6 +32,19 @@ Configuration files for the datasets used in our paper are available in the `con
 
 ```bash
 python train.py --config-name <dataset>.yaml 
-
 python eval.py --config-name <dataset>.yaml
 ```
+
+## 🔗 References
+If you find our work useful please cite our paper:
+
+```
+@article{bragagnolo2025skelsplat,
+        title={SkelSplat: Robust Multi-view 3D Human Pose Estimation with Differentiable Gaussian Rendering},
+        author={Bragagnolo, Laura and Barcellona, Leonardo and Ghidoni, Stefano},
+        journal={arXiv preprint arXiv:2511.08294},
+        year={2025}
+}
+```
+
+The code is based on the [Gaussian Splatting](https://github.com/graphdeco-inria/gaussian-splatting) repository (thanks to the authors for sharing their code). Please consider citing their work too.
