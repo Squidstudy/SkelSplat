@@ -9,7 +9,7 @@ hydra:
 dataset:
   data_root: "data/h36m-occ"
   initial_guess: "metrabs_occ_3" # metrabs_occ_2 | metrabs_occ_3 | metrabs_occ_3_hard | resnet_occ_2 | resnet_occ_3 | resnet_occ_3_hard
-  poses_2d: "metrabs_occ_3"  # metrabs_occ_2 | metrabs_occ_3 | metrabs_occ_3_hard | resnet_occ_2 | resnet_occ_3 | resnet_occ_3_hard
+  poses_2d: "metrabs_occ_3"  #store in which foders metrabs_occ_2 | metrabs_occ_3 | metrabs_occ_3_hard | resnet_occ_2 | resnet_occ_3 | resnet_occ_3_hard
   start_scene_id: 0
   end_scene_id: 2181  # total number of scenes in dataset
   frame_step: 64
