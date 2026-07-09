@@ -8,19 +8,19 @@ hydra:
 
 dataset:
   data_root: "data/h36m"
-  initial_guess: "metrabs"  # 3d_gt | metrabs | resnet | cpn | triang_metrabs | triang_resnet | triang_cpn | triang_gt
+  initial_guess: "metrabs"  # 3d_gt | metrabs | resnet | cpn | triang_metrabs | triang_resnet | triang_cpn | triang_gt 
   poses_2d: "metrabs"  # gt | metrabs | resnet | cpn
   start_scene_id: 0
-  end_scene_id: 2181  # total number of scenes in dataset
-  frame_step: 64
-  nviews: 4
+  end_scene_id: 2181  # 要跑幾禎(scene)
+  frame_step: 64 #抽樣, 每多少取一禎
+  nviews: 4 # how many camera
 
 training:
   quiet: true
   std_dev_noise: 0.0
   dropout: false
-  accumulation_steps: 4
-  loss_function: "l2_gaussian"
+  accumulation_steps: 4 # 每幾步更新3DGs -> same as nviews
+  loss_function: "l2_gaussian" # what kind of loss (see utils/loss_utils.py)
   lambda_loss_function: 0.05  # used only if loss function is combination of multiple losses
   consistency_loss: "3D_length_consistency" # none | limb_consistency
   lambda_consistency: 1e-5
@@ -37,9 +37,9 @@ model:
   train_test_exp: false
   data_device: "cuda"
   eval: false
-  opacity_on: true
-  scaling: 3
-  scaling_modifier: 1.0
+  opacity_on: true #if opacity in optimization
+  scaling: 3 #3DGs initial radius
+  scaling_modifier: 1.0 # peripheral joints(末梢關節) 放大倍率
 
 pipeline:
   rendering: diff-gaussian-rasterization-h36m  # diff-gaussian-rasterization | diff-gaussian-rasterization-no-depth
