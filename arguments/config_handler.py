@@ -13,7 +13,7 @@ class ParamGroup:
 class ConfigHandler:
     def __init__(self, cfg: DictConfig):
         self.hydra_out = HydraConfig.get().run.dir
-        self.dataset = ParamGroup(cfg.dataset)
+        self.dataset = ParamGroup(cfg.dataset) #ParamGroup: dictionary->objects => track experiment data esier
         self.training = ParamGroup(cfg.training)
         self.debug = ParamGroup(cfg.debug)
         self.model = ParamGroup(cfg.model)
@@ -22,7 +22,7 @@ class ConfigHandler:
 
     def extract(self):
         return {
-            "dataset": self.dataset.extract(),
+            "dataset": self.dataset.extract(), #extract()seems to be useless??
             "training": self.training.extract(),
             "debug": self.debug.extract(),
             "model": self.model.extract(),
