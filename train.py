@@ -54,21 +54,24 @@ from itertools import combinations
 
 
 def training(dataset, model, opt, pipe, debug, training, dataset_loader, output_dir, log):
-    
+    # 防止沒裝套對應套件
     if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam":
         sys.exit(f"Trying to use sparse adam but it is not installed, please install the correct rasterizer using pip install [3dgs_accel].")
 
-    opt_criterion = losses[training.loss_function]
+    # 字典[key]查詢語法 => 取代if/else
+    opt_criterion = losses[training.loss_function] #查詢.yaml檔裡設定的loss_function是甚麼
     consistency_criterion = consistency_losses[training.consistency_loss]
     render = render_functions[pipe.rendering]
-    early_stopping = early_stopping_strategy[training.early_stopping]()
+    early_stopping = early_stopping_strategy[training.early_stopping]() # ():把查到的類別立刻實例化成一個物件
 
+    # 因為 optimization.random_background = False => 這一段不會被用到
     tb_writer = prepare_output_and_logger(output_dir)
     
     bg_color = [1, 1, 1] if model.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
-    bg = torch.rand((3), device="cda") if opt.random_background else background
+    bg = torch.rand((3), device="cuda") if opt.random_background else background
 
+    # 對 DataLoader 索引出來的每一個scene各自跑一輪
     log.info(f"Training on {len(dataset_loader)} scenes")
 
     for scene_id, scene_data in dataset_loader:
@@ -79,15 +82,16 @@ def training(dataset, model, opt, pipe, debug, training, dataset_loader, output_
 
         if training.std_dev_noise > 0.0:
             log.info(f"Adding Gaussian noise with std. dev. {training.std_dev_noise} to 3D initial pose")
-            rng = np.random.default_rng(seed=0)  # reproducible
+            rng = np.random.default_rng(seed=0)  # reproducible: 每一個 scene 加的雜訊模式都是同一套隨機數序列（因為每次都從種子 0 重新開始生成），確保實驗可重現、而且不同 scene 之間雜訊的「隨機性」用的是同一套規則，不會因為程式執行順序不同而變動。
             noise = rng.normal(loc=0.0, scale=training.std_dev_noise, size=pose_3d.shape)
             pose_3d = pose_3d + noise
 
         first_iter = 0
-        gaussians = GaussianModel(model.sh_degree, opt.optimizer_type)
+        gaussians = GaussianModel(model.sh_degree, opt.optimizer_type) 
         scene = Scene(dataset, model, gaussians, pose_3d, cameras, scene_name, output_dir)
         gaussians.training_setup(opt)
 
+        # 用初始3DGs的covaiance 算出 GT HP
         covariance_3d = unpack_covariance(gaussians.get_covariance())
         heatmaps_cameras = generate_heatmaps(gaussians, poses_2d, scene.getTrainCameras(), covariance_3d, training.dropout, dataset.data_root, dataset.nviews)
 
@@ -101,13 +105,14 @@ def training(dataset, model, opt, pipe, debug, training, dataset_loader, output_
         # ax.set_zlabel('Z')
         # ax.legend()
         # plt.show()
-        
+
+        # 計算每一步花多少毫秒, 寫進tensorboard
         iter_start = torch.cuda.Event(enable_timing = True)
         iter_end = torch.cuda.Event(enable_timing = True)
 
-        viewpoint_stack = scene.getTrainCameras().copy()
+        viewpoint_stack = scene.getTrainCameras().copy)  #複製相機清單到scene, 避免不小心改道scene內部原本的清單
         viewpoint_indices = list(range(len(viewpoint_stack)))
-        cam_idx_counter = 0
+        cam_idx_counter = 0 # 用於輪流選相機
 
         # to save gt heatmaps
         if debug.save_images:
