@@ -37,20 +37,20 @@ from utils.graphics_utils import getWorld2View2, focal2fov, fov2focal
 import matplotlib.pyplot as plt
 
 
-class CameraInfo(NamedTuple):
-    uid: int
-    R: np.array
+class CameraInfo(NamedTuple): # NamedTuple:不可變可存取的資料欄位
+    uid: int # camera No.
+    R: np.array 
     T: np.array
     FovY: np.array
     FovX: np.array
     K: np.array
     depth_params: dict
-    image_path: str
+    image_path: str #無載入相片 => 空
     image_name: str
     depth_path: str
-    width: int
-    height: int
-    heatmap: np.array
+    width: int # resolution
+    height: int # resolution
+    heatmap: np.array 
 
 
 class SceneInfo(NamedTuple):
@@ -64,7 +64,7 @@ class SceneInfo(NamedTuple):
     poses_2d: np.array = None
     bboxes: np.array = None
 
-
+# H36M 每一個受試者解析度不一樣 => 查這個表
 H36M_camera_size = [
         [(1002, 1000), (1000, 1000), (1000, 1000), (1002, 1000)],
         [(1002, 1000), (1000, 1000), (1000, 1000), (1002, 1000)],
@@ -96,7 +96,7 @@ class DataLoader:
 
         self.n_views = nviews
         print(f"Number of views: {self.n_views}")
-
+# data_root 字串的關鍵字, switch dataset
         if "h36m" in self.data_root:
             metadata_path = os.path.join(self.data_root, "initial_guess", "cameras", "camera-parameters.json")
             with open(metadata_path, "r") as file:
@@ -122,8 +122,9 @@ class DataLoader:
             self.im_width = 1280
             self.im_height = 720
             self.cameras = ["0", "1", "2", "3", "4", "5", "6", "7"]
-
-        self.scene_mapping = self.create_scene_mapping()
+            
+        # 直接把整個索引建構完（不是延遲載入），代表建立一個 DataLoader 物件時，就會把整個資料集掃過一遍、把每一幀的資料組好放進記憶體裡的字典（如果資料集很大，這一步會需要一點時間跟記憶體，但换來後續 for scene_id, scene_data in dataset_loader 迭代時不用每次都重新讀檔
+        self.scene_mapping = self.create_scene_mapping) 
 
     
     def create_scene_mapping(self):
