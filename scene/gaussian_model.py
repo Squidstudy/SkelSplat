@@ -28,7 +28,7 @@ except:
     pass
 
 class GaussianModel:
-
+    # 不透明度維持 0-1 之間
     def setup_functions(self):
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
             L = build_scaling_rotation(scaling_modifier * scaling, rotation)
@@ -44,11 +44,11 @@ class GaussianModel:
         self.opacity_activation = torch.sigmoid
         self.inverse_opacity_activation = inverse_sigmoid
 
-        self.rotation_activation = torch.nn.functional.normalize
+        self.rotation_activation = torch.nn.functional.normalize # 四元數必須是單位長度才代表合法旋轉，normalize 確保這件事
 
-
+    # 把所有會用到的 tensor 屬性初始化成空 tensor（torch.empty(0)，佔位用，等 create_from_pcd 真正填入資料）
     def __init__(self, sh_degree, optimizer_type="default"):
-        self.active_sh_degree = 0
+        self.active_sh_degree = 0 # 不重要, 本專案不會用到
         self.optimizer_type = optimizer_type
         self.max_sh_degree = sh_degree  
         self._xyz = torch.empty(0)
@@ -65,7 +65,7 @@ class GaussianModel:
         self.spatial_lr_scale = 0
         self.setup_functions()
 
-    def capture(self):
+    def capture(self):  # 3DGs遺蹟
         return (
             self.active_sh_degree,
             self._xyz,
@@ -80,7 +80,7 @@ class GaussianModel:
             self.optimizer.state_dict(),
             self.spatial_lr_scale,
         )
-    
+    # 3DGs遺蹟
     def restore(self, model_args, training_args):
         (self.active_sh_degree, 
         self._xyz, 
@@ -130,10 +130,10 @@ class GaussianModel:
         return self.opacity_activation(self._opacity)
     
     @property
-    def get_exposure(self):
+    def get_exposure(self): # 沒被呼叫過
         return self._exposure
 
-    def get_exposure_from_name(self, image_name):
+    def get_exposure_from_name(self, image_name): # useless
         if self.pretrained_exposures is None:
             return self._exposure[self.exposure_mapping[image_name]]
         else:
@@ -142,10 +142,11 @@ class GaussianModel:
     def get_covariance(self, scaling_modifier = 1):
         return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
 
-    def oneupSHdegree(self):
+    def oneupSHdegree(self): # 沒呼叫過
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
-
+            
+    #填入 __init__資料
     def create_from_pcd(self, pcd : BasicPointCloud, cam_infos : int, spatial_lr_scale : float, opacity_on : bool, scaling : float, n_joints : int, scaling_modifier : float = 1.0, scene_type : str = "h36m"):
 
         self.spatial_lr_scale = spatial_lr_scale
@@ -157,12 +158,15 @@ class GaussianModel:
         # features[:, 3:, 1:] = 0.0
 
         # one-hot encoding for joints
-        num_joints = n_joints
-        joint_indices = torch.arange(num_joints).unsqueeze(1).cuda()
+        num_joints = n_joints 
+        joint_indices = torch.arange(num_joints).unsqueeze(1).cuda)  # generate [[0],[1],[2],...,[n_joints-1]] 這樣一個直行向量
         one_hot_tensor = torch.zeros(num_joints, num_joints, device="cuda").scatter_(1, joint_indices, 1.0)
+        # 先建一個 n_joints × n_joints 的全零矩陣
+        # scatter_(1, joint_indices, 1.0) 沿著第 1 維（欄），把每一列（每一顆橢球）在 joint_indices 指定的欄位位置填上 1.0
+        # => 一個標準單位矩陣（identity matrix），第 j 列剛好是「第 j 維為 1、其餘為 0」，也就是第 j 顆橢球的 one-hot 關節標籤。
 
         fused_color = one_hot_tensor
-        fused_color = fused_color[:, :, None]
+        fused_color = fused_color[:, :, None] # 插入一個新維度 => e.g. h36m，n_joints=17 => 形狀(17,17,1); (n_joints, RGB=n_joints, sh)
         features = fused_color  
 
         # dist2 = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()), 0.0000001)
@@ -177,34 +181,37 @@ class GaussianModel:
             elif scene_type == "occlusion-person":
                 scales[[3, 6, 10, 11, 13, 14], ...] *= scaling_modifier
         
-        rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
+        rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda") # 初始是正球體, 沒有偏轉 => [1,0,0,0]
         rots[:, 0] = 1
-
+        #因為 _opacity 儲存的是「套用 sigmoid 之前」的原始值，這裡用 inverse_opacity_activation（也就是 inverse_sigmoid）反推出「sigmoid 之後等於 1.0」所對應的原始數值該是多少
         opacities = self.inverse_opacity_activation(1.0 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
-
+        
+        # 把上面算好的初始值，包成 nn.Parameter（PyTorch 裡「可被優化器追蹤、可以計算梯度」的張量型別）正式指派給模型屬性
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
-        self._features_dc = nn.Parameter(features.transpose(1, 2).contiguous().requires_grad_(False))
-        self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(False))
+        self._features_dc = nn.Parameter(features.transpose(1, 2).contiguous().requires_grad_(False)) #requires_grad_(False) 也會讓顏色相關的梯度計算直接被跳過、根本不會產生梯度
+        self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(False)) #eatures.transpose(1,2)：把形狀從 (n_joints, n_joints, 1) 轉成 (n_joints, 1, n_joints)，這是配合球諧係數儲存慣例（(點數, 球諧係數個數, 色板數) 而不是 (點數, 色板數, 球諧係數個數)
         self._scaling = nn.Parameter(scales.requires_grad_(True))
         self._rotation = nn.Parameter(rots.requires_grad_(True))
 
-        if opacity_on:
+        if opacity_on: #其實不會優化, 因為學習率=0
             self._opacity = nn.Parameter(opacities.requires_grad_(True))
         else:
             self._opacity = nn.Parameter(opacities.requires_grad_(False))
         
-        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        #useless
+        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda") 
         self.exposure_mapping = {cam_info.image_name: idx for idx, cam_info in enumerate(cam_infos)}
         self.pretrained_exposures = None
         exposure = torch.eye(3, 4, device="cuda")[None].repeat(len(cam_infos), 1, 1)
-        self._exposure = nn.Parameter(exposure.requires_grad_(True))
-
-
+        self._exposure = nn.Parameter(exposure.requires_grad_(True)
+    
     def training_setup(self, training_args):
+        # control density, meanless
         self.percent_dense = training_args.percent_dense
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
 
+        # 把六組參數（位置、DC顏色、高階顏色、不透明度、尺度、旋轉）各自搭配自己的學習率，包成 PyTorch Adam 優化器接受的「參數群組」格式
         l = [
             {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
             {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
@@ -225,6 +232,7 @@ class GaussianModel:
 
         self.exposure_optimizer = torch.optim.Adam([self._exposure])
 
+        # 為「位置」跟「曝光」各自準備一個學習率排程函式
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
@@ -235,6 +243,8 @@ class GaussianModel:
                                                         lr_delay_mult=training_args.exposure_lr_delay_mult,
                                                         max_steps=training_args.iterations)
 
+    # 每一步訓練開始前呼叫（train.py 裡 gaussians.update_learning_rate(iteration)），把「曝光學習率」跟「位置學習率」都依照目前是第幾步，用排程函式算出新的學習率、寫回優化器。
+    # useless, never been called
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
         if self.pretrained_exposures is None:
@@ -247,6 +257,7 @@ class GaussianModel:
                 param_group['lr'] = lr
                 return lr
 
+    # 產生存 .ply 檔要用的欄位名稱清單
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
         # All channels except the 3 DC
@@ -261,6 +272,7 @@ class GaussianModel:
             l.append('rot_{}'.format(i))
         return l
 
+    # scene.save_h36m() 最終呼叫的就是這裡：把每個橢球屬性（位置、假法向量、顏色 DC/rest、不透明度、尺度、旋轉）從 GPU 搬回 CPU, 全部橫向拼接（np.concatenate(..., axis=1)）成一個大矩
     def save_ply(self, path):
         mkdir_p(os.path.dirname(path))
 
@@ -280,6 +292,7 @@ class GaussianModel:
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
 
+    # 下面都是繼承3DGs 但 useless
     def reset_opacity(self):
         opacities_new = self.inverse_opacity_activation(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
