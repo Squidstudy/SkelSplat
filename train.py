@@ -91,7 +91,7 @@ def training(dataset, model, opt, pipe, debug, training, dataset_loader, output_
         scene = Scene(dataset, model, gaussians, pose_3d, cameras, scene_name, output_dir)
         gaussians.training_setup(opt)
 
-        # 用初始3DGs的covaiance 算出 GT HP
+        # 用初始3DGs的covariance 算出 GT HP
         covariance_3d = unpack_covariance(gaussians.get_covariance())
         heatmaps_cameras = generate_heatmaps(gaussians, poses_2d, scene.getTrainCameras(), covariance_3d, training.dropout, dataset.data_root, dataset.nviews)
 
