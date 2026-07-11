@@ -135,7 +135,7 @@ def training(dataset, model, opt, pipe, debug, training, dataset_loader, output_
         # 
         for iteration in range(first_iter, opt.iterations + 1):
 
-            iter_start.record)  # 記下時間戳記
+            iter_start.record()  # 記下時間戳記
 
             gaussians.update_learning_rate(iteration)
 
