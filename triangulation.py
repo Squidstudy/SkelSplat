@@ -45,13 +45,14 @@ def get_extrinsics_h36m(camera_data, subject_id):
 
     camera_names = ["54138969", "55011271", "58860488", "60457274"]
     R = []
-    t = []
-
+    t = []  # 回傳的是「原始的 R/t 數值」（沒有經過四元數轉換的慣例調整）
+    # P = K[R|t]: P = K[R|t]
+    
     for cam in camera_names:
         extrinsics = camera_data["extrinsics"].get(subject_id, {}).get(cam, {})
         rotation = extrinsics.get("R", None)
         translation = extrinsics.get("t", None)
-        R.append(np.array(rotation).reshape(3, 3))
+        R.append(np.array(rotation).reshape(3, 3)) # 從一維陣列轉成3*3 <see note>
         t.append(np.array(translation).reshape(3, 1))
 
     return R, t
@@ -63,7 +64,7 @@ def create_projection_matrix_h36m(K_list, R_list, t_list):
     for (k, r, t) in zip(K_list, R_list, t_list):
         RT = np.hstack((r, t.reshape(-1, 1)))  # Combine rotation and translation
         P.append(np.dot(k, RT))  # Projection matrix = K * [R | t]
-    
+        # 把 R 跟 t 橫向拼接成 3×4 矩陣，再跟 3×3 的 K 相乘得到 3×4 的投影矩
     return P
 
 ############ OCCLUSION-PERSON ############
@@ -85,9 +86,10 @@ def get_camera_parameters_op(camera_data, nviews):
                            [0, 0, 1]])
         R[cam] = np.array(camera["R"]).reshape(3, 3)
         t[cam] = np.array(camera["T"]).reshape(3, 1)
-        t[cam] = -R[cam] @ t[cam]
+        t[cam] = -R[cam] @ t[cam] # utils/graphics_utils.py 取出裡面的相機中心座標轉「平移向量」的慣例轉換
+        # （因為原始資料存的 T 定義方式跟三角測量公式需要的定義不一樣）
     
-    return K, R, t
+    return K, R, t 
 
 
 ############ PANOPTIC ############
@@ -103,14 +105,14 @@ def get_camera_parameters_panoptic(camera_data, nviews):
             if data["name"] == cam:
                 K[cam] = np.array(data["K"]).reshape(3, 3)
                 R[cam] = np.array(data["R"]).reshape(3, 3)
-                t[cam] = np.array(data["t"]).reshape(3, 1) * 10 # from cm to mm
+                t[cam] = np.array(data["t"]).reshape(3, 1) * 10 # from cm to mm => 跟其他資料集的座標單位統一
     
     return K, R, t
 
-
+#  panoptic/occlusion-person
 def create_projection_matrix(K_dict, R_dict, t_dict):
     P = []
-    for cam in sorted(K_dict.keys()):
+    for cam in sorted(K_dict.keys()): # 這兩個資料集的相機參數是存成字典而不是固定順序的清單
         K = K_dict[cam]
         R = R_dict[cam]
         t = t_dict[cam]
@@ -118,29 +120,32 @@ def create_projection_matrix(K_dict, R_dict, t_dict):
         P.append(np.dot(K, RT))  # Projection matrix = K * [R | t]
     return P
 
-
+# DLT + SVD 演算法
 def triangulate_points_multi_camera(P_list, x_list):
+    # P_list:每台相機各自的投影矩陣(形狀 3×4,把 3D 點映射到該相機 2D 畫面的矩陣,前面 create_projection_matrix 算出來的東西)
+    # x_list:每台相機各自觀測到的 2D 像素座標 (x, y),順序要跟 P_list 一一對應(同一個索引代表同一台相機)。
     
     A = []
 
     for P, x in zip(P_list, x_list):
+        # 把每台相機的 (x, y) 轉成齊次座標 (x, y, 1)——多補一個 1,方便底下用矩陣運算表示「相差一個未知縮放係數」的關係。
         x_hom = np.append(x, 1)  # Convert (x, y) to homogeneous (x, y, 1)
+        # Direct Linear Transform: 2D->3D
         A.append(x_hom[0] * P[2, :] - P[0, :])
         A.append(x_hom[1] * P[2, :] - P[1, :])
 
     A = np.array(A)  
 
-    # Solve using SVD
+    # Solve using SVD, 要解的是 A @ X = 0 這種齊次線性方程組。因為現實資料有雜訊,不太可能存在一個 X 讓 AX 完全等於 0,所以退而求其次:找一個 ||X||=1 的 X,讓 ||AX|| 盡量小(最小平方意義下的最佳解)
     _, _, Vt = np.linalg.svd(A)
     X = Vt[-1]  # Last row is solution
-    X = X / X[3]  # Normalize to Euclidean coordinates
+    X = X / X[3]  # Vt[-1] 算出來的 X 是齊次座標 (X, Y, Z, W),對應到真實 3D 歐式座標是 (X/W, Y/W, Z/W)
 
     return X
 
 
 def triangulate_poses(P_list, poses_2d):
-    
-    num_joints = poses_2d.shape[1]
+    num_joints = poses_2d.shape[1] #  因為 poses_2d 是 GPU tensor，三角測量用的是 numpy／SVD 運算，需要先搬回 CPU 並脫離計算圖）
     X_3D = []
 
     for j in range(num_joints):
@@ -163,7 +168,8 @@ def triangulation(dataset, dataset_loader, output_dir, log):
         metadata_path = os.path.join(dataset.data_root, "cameras.json")
         with open(metadata_path, "r") as file:
             camera_data = json.load(file)
-        
+
+    # Same as DataLoader
     log.info(f"{len(dataset_loader)} scenes to process")
     camera_data_pan = {}
 
@@ -192,7 +198,7 @@ def triangulation(dataset, dataset_loader, output_dir, log):
 
         pose_3d_norm = pose_3d_triang[:, :3] / pose_3d_triang[:, 3].reshape(-1, 1)
 
-        pcd = o3d.geometry.PointCloud()
+        pcd = o3d.geometry.PointCloud()  # 建立點雲物件、寫成 .ply 檔，存進 point_cloud/iteration_0 資料夾
         pcd.points = o3d.utility.Vector3dVector(pose_3d_norm)
 
         point_cloud_path = os.path.join(output_dir, "point_cloud/iteration_0")
